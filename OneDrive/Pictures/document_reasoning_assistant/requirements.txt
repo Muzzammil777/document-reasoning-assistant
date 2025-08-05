@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+python-dotenv
+torch
+transformers
+sentence-transformers
+faiss-cpu
+pymupdf
+python-docx
+psycopg2-binary
+requests
+pinecone
