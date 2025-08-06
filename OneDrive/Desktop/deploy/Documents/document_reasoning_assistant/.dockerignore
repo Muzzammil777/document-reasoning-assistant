@@ -29,3 +29,36 @@ coverage.xml
 node_modules/
 *.tmp
 *.temp
+
+# Exclude large files and unnecessary content
+*.msi
+*.exe
+*.zip
+*.tar.gz
+AzureCLI.msi
+
+# Exclude frontend (not needed for API deployment)
+frontend/
+
+# Exclude test and development files
+test_*.py
+*_test.py
+tests/
+quick_test.py
+test_endpoint.py
+test_hackrx.py
+
+# Exclude documentation files
+backend_files_explanation.md
+deploy-azure.ps1
+HACKATHON_DEPLOYMENT.md
+PINECONE_SETUP.md
+PROJECT_KNOWLEDGE.md
+QUICK_DEPLOY.md
+
+# Exclude IDE and OS files
+.vscode/
+.idea/
+*.swp
+*.swo
+Thumbs.db
