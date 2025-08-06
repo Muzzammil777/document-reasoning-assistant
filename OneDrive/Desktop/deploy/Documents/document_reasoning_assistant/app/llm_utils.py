@@ -2,6 +2,7 @@ import os
 import json
 import logging
 import requests
+import time
 from typing import List, Dict, Any, Optional
 from dotenv import load_dotenv
 
@@ -56,7 +57,7 @@ class TogetherAIProvider(LLMProvider):
             raise
 
 class GroqProvider(LLMProvider):
-    """Groq provider for fast inference"""
+    """Groq provider for fast inference with retry logic"""
     
     def __init__(self, api_key: str, model_name: str = "llama3-70b-8192"):
         super().__init__(api_key, model_name)
@@ -77,19 +78,41 @@ class GroqProvider(LLMProvider):
             "temperature": temperature
         }
         
-        try:
-            response = requests.post(self.base_url, headers=headers, json=payload, timeout=60)
-            response.raise_for_status()
-            
-            result = response.json()
-            return result["choices"][0]["message"]["content"].strip()
-            
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Groq API request failed: {str(e)}")
-            raise
-        except KeyError as e:
-            logger.error(f"Unexpected Groq response format: {str(e)}")
-            raise
+        # Retry logic for rate limiting
+        max_retries = 3
+        base_delay = 1  # Start with 1 second delay
+        
+        for attempt in range(max_retries + 1):
+            try:
+                response = requests.post(self.base_url, headers=headers, json=payload, timeout=60)
+                response.raise_for_status()
+                
+                result = response.json()
+                return result["choices"][0]["message"]["content"].strip()
+                
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 429:  # Too Many Requests
+                    if attempt < max_retries:
+                        # Exponential backoff: 1s, 2s, 4s
+                        delay = base_delay * (2 ** attempt)
+                        logger.warning(f"Rate limit hit. Retrying in {delay} seconds... (attempt {attempt + 1}/{max_retries + 1})")
+                        time.sleep(delay)
+                        continue
+                    else:
+                        logger.error("Max retries reached for rate limit. Failing.")
+                        raise
+                else:
+                    logger.error(f"HTTP error: {e.response.status_code} - {e.response.text}")
+                    raise
+            except requests.exceptions.RequestException as e:
+                logger.error(f"Groq API request failed: {str(e)}")
+                raise
+            except KeyError as e:
+                logger.error(f"Unexpected Groq response format: {str(e)}")
+                raise
+        
+        # This should never be reached, but just in case
+        raise Exception("All retry attempts failed")
 
 class FireworksProvider(LLMProvider):
     """Fireworks AI provider"""
@@ -340,10 +363,16 @@ Analyze the provided document sections and answer the user's query. You must res
     
     def _create_error_response(self, error_message: str) -> Dict[str, Any]:
         """Create error response when LLM is completely unavailable"""
+        # Provide specific guidance for rate limit errors
+        if "429" in error_message or "Too Many Requests" in error_message:
+            additional_info = "The AI service is currently experiencing high demand. Please wait a moment and try again. Rate limits typically reset within 1-2 minutes."
+        else:
+            additional_info = "Please try again later or contact support if the issue persists."
+            
         return {
-            "direct_answer": "I'm unable to process your question due to a system error.",
+            "direct_answer": "I'm temporarily unable to process your question due to high demand on the AI service.",
             "decision": "Uncertain",
-            "justification": f"Unable to process query due to system error: {error_message}",
+            "justification": f"Unable to process query: {error_message}",
             "referenced_clauses": [],
-            "additional_info": "Please try again later or contact support if the issue persists."
+            "additional_info": additional_info
         }
